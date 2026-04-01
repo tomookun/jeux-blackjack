@@ -306,6 +306,30 @@ input[type=checkbox]{accent-color:var(--gold);width:18px;height:18px}
     <div class="tip-card"><h3>Soft vs Hard</h3><p>Main soft = As comptant 11. On peut tirer sans risque de bust. Ne jamais confondre Soft 17 et Hard 17.</p></div>
     <div class="tip-card"><h3>Surrender</h3><p>16 vs 9/10/A → Surrender. 15 vs 10 → Surrender. Récupérez 50% plutôt que de perdre 100%.</p></div>
   </div>
+  <h2 class="section-title">🎲 Tips Avancés — Situations spéciales</h2>
+  <div class="tips-grid">
+    <div class="tip-card"><h3>Paire de 9 — le piège</h3><ul><li>9+9 vs 2-6 : Split</li><li>9+9 vs 7 : Stand (18 bat souvent 7)</li><li>9+9 vs 8-9 : Split</li><li>9+9 vs 10/A : Stand</li></ul></div>
+    <div class="tip-card"><h3>Quand doubler après split ?</h3><p>Si DAS est autorisé : double sur 10/11 après n'importe quel split. Sur 9 si le croupier montre 3-6. C'est l'un des plus grands avantages du joueur.</p></div>
+    <div class="tip-card"><h3>Croupier montre un 2</h3><p>Le 2 est souvent sous-estimé. Il bust ~35% du temps. Traitez-le comme une carte forte mais standez sur 13+ et doublez sur 9/10/11.</p></div>
+    <div class="tip-card"><h3>Mauvaises mains à éviter</h3><ul><li>16 = pire main possible</li><li>12 vs 2-3 = tirez (pas stand)</li><li>15 vs 10 = Surrender si dispo</li><li>Hard 17+ = toujours Stand</li></ul></div>
+    <div class="tip-card"><h3>Soft 19 et 20</h3><p>Soft 19 (As+8) et Soft 20 (As+9) = toujours Stand. Beaucoup de joueurs tirent par erreur. Ces mains sont déjà excellentes.</p></div>
+    <div class="tip-card"><h3>Le mythe de la "troisième base"</h3><p>La position à la table (première ou dernière place) n'affecte PAS vos chances mathématiquement. Chaque main est indépendante.</p></div>
+    <div class="tip-card"><h3>Variations selon le nombre de decks</h3><ul><li>1 deck : Split 2+2 vs 2-7</li><li>6+ decks : Split 2+2 vs 3-7 seulement</li><li>Adaptez votre stratégie au sabot !</li></ul></div>
+    <div class="tip-card"><h3>Composition dependant strategy</h3><p>Avec 1 deck : 10+2 vs 4 → Stand (contrairement à la basic strategy standard). Ces exceptions valent uniquement en single deck.</p></div>
+    <div class="tip-card"><h3>Indicateurs d'une bonne table</h3><ul><li>Blackjack paie 3:2 ✅</li><li>S17 (Stand Soft 17) ✅</li><li>DAS autorisé ✅</li><li>Surrender disponible ✅</li><li>Peu de decks ✅</li></ul></div>
+  </div>
+
+  <h2 class="section-title">🤖 Assistant Blackjack</h2>
+  <div class="quiz-box" id="chatbot-wrap">
+    <div style="font-size:14px;color:#e8d8b0;margin-bottom:12px">Bonjour ! Je suis ton assistant Blackjack. Choisis une question ou pose-la toi-même 👇</div>
+    <div id="chatbot-msgs" style="display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto;margin-bottom:12px"></div>
+    <div id="chatbot-suggestions" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:6px">
+      <input class="input" id="chatbot-input" placeholder="Pose ta question..." style="flex:1">
+      <button class="btn btn-gold" id="chatbot-send">↑</button>
+    </div>
+  </div>
+
   <h2 class="section-title">🎯 Quiz</h2>
   <div class="quiz-box">
     <div class="quiz-q" id="quiz-q">Chargement...</div>
@@ -482,8 +506,12 @@ function loadRooms(){
       const r=d.data(),id=d.id,players=r.players?Object.keys(r.players).filter(k=>r.players[k]).length:0;
       const item=document.createElement('div');item.className='room-item';
       item.innerHTML=`<div><div class="room-name">🎰 ${r.name||'Table'}</div><div class="room-players">${players} joueur(s)</div></div>`;
+      const btns=document.createElement('div');btns.style.cssText='display:flex;gap:6px';
       const btn=document.createElement('button');btn.className='btn btn-gold';btn.style.cssText='font-size:12px;padding:6px 12px';btn.textContent='Rejoindre';
-      btn.onclick=()=>joinRoom(id,r.name||'Table');item.appendChild(btn);list.appendChild(item);
+      btn.onclick=()=>joinRoom(id,r.name||'Table');
+      const del=document.createElement('button');del.className='btn btn-red';del.style.cssText='font-size:12px;padding:6px 10px';del.textContent='🗑️';
+      del.onclick=async()=>{if(confirm('Supprimer cette table ?'))await db.collection('rooms').doc(id).delete()};
+      btns.appendChild(btn);btns.appendChild(del);item.appendChild(btns);list.appendChild(item);
     });
   });
 }
@@ -501,7 +529,14 @@ async function joinRoom(id,name){
   document.getElementById('lobby-section').style.display='none';
   document.getElementById('game-section').style.display='block';
   document.getElementById('room-name-disp').textContent=name;
-  showBetZone();
+  // Force affichage zone mise
+  bet=0;gamePhase='bet';
+  document.getElementById('bet-zone').style.display='block';
+  document.getElementById('action-zone').style.display='none';
+  document.getElementById('insurance-box').style.display='none';
+  document.getElementById('hint-box').style.display='none';
+  document.getElementById('btn-rebet').style.display='none';
+  render();
   roomUnsub=db.collection('rooms').doc(id).onSnapshot(snap=>{
     if(!snap.exists){leaveRoom();return}
     renderOtherPlayers(snap.data().players);
@@ -580,18 +615,24 @@ document.querySelectorAll('.chip').forEach(chip=>chip.onclick=()=>{
   bet+=v;playChip();render();
 });
 document.getElementById('btn-clear').onclick=()=>{bet=0;render()};
-document.getElementById('btn-deal').onclick=deal;
+document.getElementById('btn-deal').onclick=()=>{
+  if(AC&&AC.state==='suspended')AC.resume();
+  console.log('deal clicked, phase:',gamePhase,'bet:',bet,'bankroll:',bankroll);
+  gamePhase='bet'; // force reset
+  deal();
+};
 document.getElementById('btn-rebet').onclick=()=>{bet=Math.min(lastBet,bankroll);render()};
 
 // ===== DEAL =====
 function deal(){
   if(gamePhase!=='bet')return;
   if(bet===0){setMsg('Placez une mise !','msg-info');return}
+  if(bet>bankroll){setMsg('Mise trop élevée !','msg-info');return}
   bankroll-=bet;lastBet=bet;
   playerHands=[[]];currentHandIdx=0;splitCount=0;dealerHand=[];
   document.getElementById('action-zone').style.display='none';
   document.getElementById('bet-zone').style.display='none';
-  document.getElementById('rebet-btn').style.display='none';
+  document.getElementById('btn-rebet').style.display='none';
   document.getElementById('hint-box').style.display='none';
   document.getElementById('insurance-box').style.display='none';
   setMsg('');
@@ -802,6 +843,81 @@ function renderQuiz(){
   });
 }
 document.getElementById('btn-next-quiz').onclick=()=>{quizIdx++;renderQuiz()};
+
+// ===== CHATBOT =====
+const CHATBOT_QA=[
+  {q:"C'est quoi la basic strategy ?",r:"La basic strategy est le jeu mathématiquement optimal pour chaque situation. Elle réduit l'avantage du casino à seulement 0.4-0.5%. C'est la base absolue — mémorise le tableau dans l'académie !"},
+  {q:"Quand doubler down ?",r:"Double Down sur 11 presque toujours. Sur 10 sauf vs 10/As croupier. Sur 9 vs 3-6 croupier. Sur Soft 13-18 selon la carte du croupier. C'est l'action qui augmente le plus tes gains !"},
+  {q:"Quand splitter ?",r:"Toujours split : As+As et 8+8. Jamais split : 10+10 et 5+5. Split 2+2, 3+3, 6+6, 7+7 vs croupier faible (2-7). 9+9 vs 2-6 et 8-9. La règle d'or : jamais splittes les 10s !"},
+  {q:"Comment fonctionne le comptage ?",r:"Système Hi-Lo : cartes 2-6 = +1, cartes 7-9 = 0, cartes 10/J/Q/K/As = -1. Additionne mentalement au fur et à mesure. Divise par les decks restants = True Count. TC élevé = augmente ta mise !"},
+  {q:"C'est quoi le True Count ?",r:"True Count = Running Count ÷ nombre de decks restants. Exemple : RC de +8 avec 4 decks restants = TC de +2. C'est le TC qui décide si la table est favorable, pas le RC brut."},
+  {q:"Quand prendre l'assurance ?",r:"Presque jamais ! L'assurance paie 2:1 mais la probabilité que le croupier ait un blackjack est ~30%. L'avantage casino sur ce pari est de 7.4%. Seule exception : si ton True Count dépasse +5."},
+  {q:"C'est quoi le Surrender ?",r:"Le Surrender te permet d'abandonner ta main et récupérer 50% de ta mise. Utilise-le sur : 16 vs 9/10/As, 15 vs 10. C'est une décision de survie — vaut mieux perdre 50% que 100% !"},
+  {q:"Pourquoi ne pas splitter les 10s ?",r:"Ta main à 20 gagne ~85% du temps. C'est quasi imbattable. Splitter pour deux mains à 10 est une erreur même si le croupier est faible. Ne cède pas à la tentation !"},
+  {q:"C'est quoi S17 et H17 ?",r:"S17 = le croupier Stand sur Soft 17 (meilleur pour toi, avantage casino réduit de 0.2%). H17 = le croupier Hit sur Soft 17 (standard dans la plupart des casinos). Cherche toujours les tables S17 !"},
+  {q:"Comment gérer son bankroll ?",r:"Règle des 5% : jamais plus de 5% du bankroll par main. Stop loss à -40% du bankroll de session. Take profit à +50%. Ne chasse jamais les pertes. Si tu perds ta limite, tu t'arrêtes, point final."},
+  {q:"Quelle est la pire main au blackjack ?",r:"Le 16 (surtout 10+6) est la pire main. Tu bust si tu tires une carte ≥6 (61.5% de chance). La stratégie recommande de Surrender vs 9/10/As, Stand vs 2-6 croupier, et Hit vs 7-8."},
+  {q:"Blackjack 6:5 vs 3:2 ?",r:"FUYEZ les tables 6:5 ! Au lieu de gagner 15€ pour une mise de 10€ (3:2), vous gagnez seulement 12€ (6:5). Cette différence coûte 1.39% supplémentaire — c'est un piège à touristes !"},
+];
+
+const SUGGESTIONS=[
+  "C'est quoi la basic strategy ?",
+  "Quand doubler down ?",
+  "Quand splitter ?",
+  "Comment fonctionne le comptage ?",
+  "Quand prendre l'assurance ?",
+  "Comment gérer son bankroll ?",
+];
+
+function initChatbot(){
+  const sugg=document.getElementById('chatbot-suggestions');
+  SUGGESTIONS.forEach(q=>{
+    const b=document.createElement('button');
+    b.className='quiz-opt';b.textContent=q;b.style.fontSize='12px';
+    b.onclick=()=>askChatbot(q);
+    sugg.appendChild(b);
+  });
+  document.getElementById('chatbot-send').onclick=()=>{
+    const input=document.getElementById('chatbot-input');
+    const q=input.value.trim();if(!q)return;
+    input.value='';askChatbot(q);
+  };
+  document.getElementById('chatbot-input').onkeydown=e=>{if(e.key==='Enter'){const input=document.getElementById('chatbot-input');const q=input.value.trim();if(!q)return;input.value='';askChatbot(q)}};
+}
+
+function askChatbot(question){
+  const msgs=document.getElementById('chatbot-msgs');
+  // Message utilisateur
+  msgs.innerHTML+=`<div style="text-align:right"><span style="background:#1a4a2e;border:1px solid #2d6e47;border-radius:10px 10px 0 10px;padding:6px 12px;font-size:13px;display:inline-block;max-width:80%">${question}</span></div>`;
+  // Cherche réponse
+  const lower=question.toLowerCase();
+  let response=null;
+  for(const qa of CHATBOT_QA){
+    const keywords=qa.q.toLowerCase().split(' ').filter(w=>w.length>3);
+    if(keywords.some(k=>lower.includes(k))||lower.includes(qa.q.toLowerCase().substring(0,15))){
+      response=qa.r;break;
+    }
+  }
+  if(!response){
+    // Recherche par mots clés
+    if(lower.includes('split')||lower.includes('séparer'))response=CHATBOT_QA[2].r;
+    else if(lower.includes('double'))response=CHATBOT_QA[1].r;
+    else if(lower.includes('count')||lower.includes('compt'))response=CHATBOT_QA[3].r;
+    else if(lower.includes('assur'))response=CHATBOT_QA[5].r;
+    else if(lower.includes('surr'))response=CHATBOT_QA[6].r;
+    else if(lower.includes('bank')||lower.includes('argent')||lower.includes('mise'))response=CHATBOT_QA[9].r;
+    else if(lower.includes('true')||lower.includes('count'))response=CHATBOT_QA[4].r;
+    else if(lower.includes('10')||lower.includes('dix'))response=CHATBOT_QA[7].r;
+    else response="Je n'ai pas de réponse précise pour ça ! Essaie une des questions suggérées ou reformule. Tu peux aussi consulter les sections Tips et Basic Strategy dans l'académie 📚";
+  }
+  setTimeout(()=>{
+    msgs.innerHTML+=`<div style="text-align:left"><span style="background:#0d2a1a;border:1px solid #2d4a35;border-radius:10px 10px 10px 0;padding:6px 12px;font-size:13px;color:#bbb;display:inline-block;max-width:85%">🤖 ${response}</span></div>`;
+    msgs.scrollTop=msgs.scrollHeight;
+  },400);
+  msgs.scrollTop=msgs.scrollHeight;
+}
+
+initChatbot();
 
 // ===== SETTINGS =====
 function applySettings(){
